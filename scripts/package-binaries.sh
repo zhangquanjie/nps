@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-os=${1:?Usage: package-binaries.sh GOOS OUTPUT_DIR}
-output=${2:?Usage: package-binaries.sh GOOS OUTPUT_DIR}
+group=${1:?Usage: package-binaries.sh PLATFORM_GROUP OUTPUT_DIR}
+output=${2:?Usage: package-binaries.sh PLATFORM_GROUP OUTPUT_DIR}
+os=${group%%-*}
 
-case "$os" in
+case "$group" in
     windows) arches=(386 amd64 arm64) ;;
-    linux) arches=(386 amd64 arm64 arm_v5 arm_v6 arm_v7 mips mipsle mips64 mips64le riscv64 loong64 ppc64 ppc64le s390x) ;;
+    linux) arches=(386 amd64 arm64 arm_v5 arm_v6 arm_v7) ;;
+    linux-mips) arches=(mips mipsle mips64 mips64le) ;;
+    linux-extra) arches=(riscv64 loong64 ppc64 ppc64le s390x) ;;
     darwin) arches=(amd64 arm64) ;;
     freebsd) arches=(386 amd64 arm arm64) ;;
-    *) echo "Unsupported operating system: $os" >&2; exit 1 ;;
+    *) echo "Unsupported platform group: $group" >&2; exit 1 ;;
 esac
 
 mkdir -p "$output"

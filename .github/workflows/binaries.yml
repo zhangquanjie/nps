@@ -10,12 +10,12 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }} packages
+    name: Build ${{ matrix.group }} packages
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows, linux, darwin, freebsd]
+        group: [windows, linux, linux-mips, linux-extra, darwin, freebsd]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -23,10 +23,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.27.3'
-      - run: bash scripts/package-binaries.sh "${{ matrix.os }}" dist
+      - run: bash scripts/package-binaries.sh "${{ matrix.group }}" dist
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: packages-${{ matrix.os }}
+          name: packages-${{ matrix.group }}
           path: dist/*.tar.gz
           if-no-files-found: error
           compression-level: 0
