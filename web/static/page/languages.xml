@@ -5,6 +5,35 @@
 
 	<default>en-US</default>
 
+	<lang id="word-sourceip">
+		<zh-CN>最近访问 IP</zh-CN>
+		<en-US>Latest visitor IP</en-US>
+	</lang>
+	<lang id="info-tcp-portrange">
+		<zh-CN>TCP 支持连续范围，例如服务端端口 6001-6500，目标 127.0.0.1:6001-6500。两段端口数量必须相同。</zh-CN>
+		<en-US>TCP supports ranges such as 6001-6500 with a target of 127.0.0.1:6001-6500. Both ranges must have the same number of ports.</en-US>
+	</lang>
+	<lang id="word-theme">
+		<zh-CN>主题</zh-CN>
+		<en-US>Theme</en-US>
+	</lang>
+	<lang id="theme-classic">
+		<zh-CN>经典</zh-CN>
+		<en-US>Classic</en-US>
+	</lang>
+	<lang id="theme-ocean">
+		<zh-CN>海洋</zh-CN>
+		<en-US>Ocean</en-US>
+	</lang>
+	<lang id="theme-forest">
+		<zh-CN>森林</zh-CN>
+		<en-US>Forest</en-US>
+	</lang>
+	<lang id="theme-night">
+		<zh-CN>夜间</zh-CN>
+		<en-US>Night</en-US>
+	</lang>
+
 	<languages>
 		<zh-CN>简体中文</zh-CN>
 		<en-US>English</en-US>

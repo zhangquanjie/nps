@@ -16,6 +16,8 @@
     <link href="{{.web_base_url}}/static/css/bootstrap.min.css" rel="stylesheet">
     <link href="{{.web_base_url}}/static/css/bootstrap-table.min.css" rel="stylesheet">
     <link href="{{.web_base_url}}/static/css/style.css" rel="stylesheet">
+    <link href="{{.web_base_url}}/static/css/themes.css" rel="stylesheet">
+    <script src="{{.web_base_url}}/static/js/theme.js" defer></script>
 
     <!-- Latest compiled and minified JavaScript -->
     <script src="{{.web_base_url}}/static/js/jquery-3.4.1.min.js"></script>
@@ -106,6 +108,15 @@
                 </div>
                 <ul class="nav navbar-top-links navbar-right">
                     <li>
+                        <select id="nps-theme" class="form-control form-control-sm" aria-labelledby="nps-theme-label">
+                            <option value="classic" langtag="theme-classic">Classic</option>
+                            <option value="ocean" langtag="theme-ocean">Ocean</option>
+                            <option value="forest" langtag="theme-forest">Forest</option>
+                            <option value="night" langtag="theme-night">Night</option>
+                        </select>
+                        <span id="nps-theme-label" class="sr-only" langtag="word-theme">Theme</span>
+                    </li>
+                    <li>
                         <span class="m-r-sm text-muted welcome-message"><span langtag="word-welcome"></span>
                         <a href="https://ehang.io/nps" langtag="application"></a></span>
                     </li>
@@ -130,7 +141,7 @@
             <div class="float-right">
                 <span langtag="word-readmore"></span> <strong><a href="https://ehang.io/nps" langtag="word-go"></a></strong>
             </div>
-            <div><strong langtag="word-copyright"></strong> <span langtag="application"></span> &copy; 2018-2020</div>
+            <div><strong langtag="word-copyright"></strong> <a href="https://github.com/ehang-io/nps">NPS / ehang-io</a> &copy; 2018-2020</div>
         </div>
     </div>
 </div>

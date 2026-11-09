@@ -35,6 +35,8 @@
 </div>
 
 <script>
+    const tcpView = {{.type}} === 'tcp';
+    const tunnelURL = "{{.web_base_url}}/index/gettunnel";
     name = '{{.name}}:'.replace(/\s*/g,"")
     $('#langtag').attr('langtag','page-list' + name.replace(/:.*/,"")).next().text(name.split(":")[1])
 
@@ -42,12 +44,13 @@
     $('#table').bootstrapTable({
         toolbar: "#toolbar",
         method: 'post', // 服务器数据的请求方式 get or post
-        url: "{{.web_base_url}}/index/gettunnel", // 服务器数据的加载地址
+        url: tunnelURL,
         queryParams: function (params) {
             return {
                 "offset": params.offset,
                 "limit": params.limit,
                 "type":{{.type}},
+                "tcp_view": tcpView,
                 "client_id":{{.client_id}},
                 "search": params.search
             }
@@ -63,11 +66,51 @@
         pageNumber: 1,
         pageList: [5, 10, 20, 50],//分页步进值
         detailView: true,
+        detailFilter: function (index, row) { return !tcpView || row.RangeCount > 0; },
         smartDisplay: true, // 智能显示 pagination 和 cardview 等
-        onExpandRow: function () {$('body').setLang ('.detail-view');},
+        onExpandRow: function (index, row, detail) {
+            if (!tcpView) {
+                $('body').setLang('.detail-view');
+                return;
+            }
+            const columns = $('#table').bootstrapTable('getOptions').columns[0]
+                .filter(function (column) {
+                    return ['Port', 'Remark', 'Target', 'Flow.InletFlow', 'Flow.ExportFlow',
+                        'SourceIP', 'Status', 'RunStatus', 'option'].indexOf(column.field) !== -1;
+                })
+                .map(function (column) { return $.extend({}, column, {visible: true}); });
+            detail.find('table').bootstrapTable({
+                url: tunnelURL,
+                method: 'post',
+                contentType: 'application/x-www-form-urlencoded',
+                locale: languages.current,
+                queryParams: function (params) {
+                    return {
+                        offset: params.offset, limit: params.limit, search: params.search,
+                        type: 'tcp', client_id: {{.client_id}}, tcp_view: true, range_id: row.Id
+                    };
+                },
+                pagination: true,
+                sidePagination: 'server',
+                pageSize: 10,
+                pageList: [10, 25, 50],
+                search: true,
+                showRefresh: true,
+                columns: columns,
+                onPostBody: function () {
+                    if (languages.content) $('body').setLang('.tcp-range-detail');
+                }
+            });
+        },
+        onCollapseRow: function (index, row, detail) {
+            if (tcpView) detail.find('table').bootstrapTable('destroy');
+        },
         onLoadSuccess:function (data) {$('body').setLang ('.detail-view');},
         onPostBody: function (data) { if ($(this)[0].locale != undefined ) $('body').setLang ('#table'); },
         detailFormatter: function (index, row, element) {
+            if (tcpView) {
+                return '<div class="tcp-range-detail"><table></table></div>';
+            }
             tmp = '<b langtag="word-exportflow"></b>: ' + changeunit(row.Flow.ExportFlow) + '&emsp;'
                     + '<b langtag="word-inletflow"></b>: ' + changeunit(row.Flow.InletFlow) + '&emsp;'
                     + '<b langtag="word-crypt"></b>: ' + row.Client.Cnf.Crypt + '&emsp;'
@@ -109,6 +152,7 @@
             },
             {
                 field: 'Remark',//域值
+                escape: tcpView,
                 title: '<span langtag="word-remark"></span>',//标题
                 halign: 'center',
                 visible: true//false表示不显示
@@ -126,7 +170,10 @@
                 field: 'Port',//域值
                 title: '<span langtag="word-port"></span>',//标题
                 halign: 'center',
-                visible: true//false表示不显示
+                visible: true,//false表示不显示
+                formatter: function (value, row) {
+                    return row.RangeCount ? '<span class="text-nowrap">' + row.Ports + ' (' + row.RangeCount + ')</span>' : value;
+                }
             },
             {
                 field: 'Target',//域值
@@ -134,14 +181,39 @@
                 halign: 'center',
                 visible: true,//false表示不显示
                 formatter: function (value, row, index) {
-                    return row.Target.TargetStr
+                    if (row.RangeCount) return '—';
+                    return tcpView ? $('<span>').text(row.Target.TargetStr).html() : row.Target.TargetStr;
+                }
+            },
+            {
+                field: 'Flow.InletFlow',
+                title: '<span langtag="word-inletflow"></span>',
+                visible: tcpView,
+                switchable: tcpView,
+                formatter: changeunit
+            },
+            {
+                field: 'Flow.ExportFlow',
+                title: '<span langtag="word-exportflow"></span>',
+                visible: tcpView,
+                switchable: tcpView,
+                formatter: changeunit
+            },
+            {
+                field: 'SourceIP',
+                title: '<span langtag="word-sourceip"></span>',
+                visible: tcpView,
+                switchable: tcpView,
+                formatter: function (value, row) {
+                    return value ? $('<span>').text(value).attr('title', new Date(row.SourceAt).toLocaleString())[0].outerHTML : '—';
                 }
             },
             {
                 field: 'Password',//域值
                 title: '<span langtag="word-identificationkey"></span>',//标题
                 halign: 'center',
-                visible: true//false表示不显示
+                visible: !tcpView,
+                switchable: !tcpView
             },
             {
                 field: 'Status',//域值
@@ -150,6 +222,7 @@
                 halign: 'center',
                 visible: true,//false表示不显示
                 formatter: function (value, row, index) {
+                    if (row.RangeCount) return '—';
                     if (value) {
                         return '<span class="badge badge-primary" langtag="word-open"></span>'
                     } else {
@@ -164,6 +237,7 @@
                 halign: 'center',
                 visible: true,//false表示不显示
                 formatter: function (value, row, index) {
+                    if (row.RangeCount) return '—';
                     if (value) {
                         return '<span class="badge badge-primary" langtag="word-open"></span>'
                     } else {
@@ -192,6 +266,7 @@
                 halign: 'center',
                 visible: true,//false表示不显示
                 formatter: function (value, row, index) {
+                    if (row.RangeCount) return '—';
                     btn_group = '<div class="btn-group">'
                     if (row.Status) {
                         btn_group += "<a onclick=\"submitform('stop', '{{.web_base_url}}/index/stop', {'id':" + row.Id

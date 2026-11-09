@@ -1,5 +1,25 @@
 
 # nps
+
+## 二次开发版
+
+本仓库基于 [ehang-io/nps](https://github.com/ehang-io/nps) 的
+`ab648d6` 修改，修改日期为 2026-11-09。保留上游提交历史和版权声明，源码按
+[GNU GPL v3](LICENSE) 分发。
+
+- 在 Web 管理端新增 TCP 隧道时，服务端端口可填 `6001-6500`，目标填
+  `127.0.0.1:16001-16500`。两个范围的端口数量需一致，按顺序一一映射。
+  通过 NPC 配置文件提交的连续 TCP 端口范围也会分组。
+- TCP 列表中每个范围占一行。点行首的展开按钮可按端口查看目标、运行状态、
+  入站和出站累计流量，并可编辑、启停或删除单个端口。点刷新读取最新数据。
+- 最近访问 IP 显示 NPS 服务端收到的 TCP 对端地址。若流量经其他代理接入，
+  显示该代理的地址。每个端口只保留一条最近记录，服务端重启后清空。
+  流量统计沿用 `flow_store_interval` 的持久化设置。
+- 管理端顶部可切换经典、海洋、森林和夜间主题。当前浏览器会记住选择。
+
+在仓库根目录运行 `go build -o nps.exe ./cmd/nps` 可构建 Windows 服务端。
+升级时，将新版服务端和本仓库的 `web` 目录一起部署，并沿用原来的 `conf` 数据。
+
 ![](https://img.shields.io/github/stars/ehang-io/nps.svg)   ![](https://img.shields.io/github/forks/ehang-io/nps.svg)
 [![Gitter](https://badges.gitter.im/cnlh-nps/community.svg)](https://gitter.im/cnlh-nps/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 ![Release](https://github.com/ehang-io/nps/workflows/Release/badge.svg)

@@ -212,6 +212,17 @@ func InIntArr(arr []int, val int) bool {
 	return false
 }
 
+// ParsePortRange parses one inclusive range of TCP or UDP ports.
+func ParsePortRange(value string) (first, last int, ok bool) {
+	bounds := strings.SplitN(value, "-", 2)
+	if len(bounds) != 2 {
+		return 0, 0, false
+	}
+	first, firstErr := strconv.Atoi(strings.TrimSpace(bounds[0]))
+	last, lastErr := strconv.Atoi(strings.TrimSpace(bounds[1]))
+	return first, last, firstErr == nil && lastErr == nil && first >= 1 && last >= first && last <= 65535
+}
+
 //format ports str to a int array
 func GetPorts(p string) []int {
 	var ps []int

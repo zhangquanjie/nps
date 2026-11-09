@@ -34,13 +34,8 @@ func TestServerPort(p int, m string) (b bool) {
 	if m == "p2p" || m == "secret" {
 		return true
 	}
-	if p > 65535 || p < 0 {
+	if !ServerPortAllowed(p) {
 		return false
-	}
-	if len(ports) != 0 {
-		if !common.InIntArr(ports, p) {
-			return false
-		}
 	}
 	if m == "udp" {
 		b = common.TestUdpPort(p)
@@ -48,6 +43,10 @@ func TestServerPort(p int, m string) (b bool) {
 		b = common.TestTcpPort(p)
 	}
 	return
+}
+
+func ServerPortAllowed(port int) bool {
+	return port >= 0 && port <= 65535 && (len(ports) == 0 || common.InIntArr(ports, port))
 }
 
 func getSeverStatus() {

@@ -1,6 +1,11 @@
 package controllers
 
 import (
+	"strconv"
+	"strings"
+	"sync"
+
+	"ehang.io/nps/lib/common"
 	"ehang.io/nps/lib/file"
 	"ehang.io/nps/server"
 	"ehang.io/nps/server/tool"
@@ -11,6 +16,8 @@ import (
 type IndexController struct {
 	BaseController
 }
+
+var tunnelChanges sync.Mutex
 
 func (s *IndexController) Index() {
 	s.Data["web_base_url"] = beego.AppConfig.String("web_base_url")
@@ -81,6 +88,14 @@ func (s *IndexController) GetTunnel() {
 	start, length := s.GetAjaxParams()
 	taskType := s.getEscapeString("type")
 	clientId := s.GetIntNoErr("client_id")
+	if s.GetSession("isAdmin") == false {
+		clientId = s.GetSession("clientId").(int)
+	}
+	if taskType == "tcp" && s.GetBoolNoErr("tcp_view") {
+		list, count := server.GetTCPRows(start, length, clientId, s.GetIntNoErr("range_id"), s.getEscapeString("search"))
+		s.AjaxTable(list, count, count, nil)
+		return
+	}
 	list, cnt := server.GetTunnel(start, length, taskType, clientId, s.getEscapeString("search"))
 	s.AjaxTable(list, cnt, cnt, nil)
 }
@@ -92,6 +107,8 @@ func (s *IndexController) Add() {
 		s.SetInfo("add tunnel")
 		s.display()
 	} else {
+		tunnelChanges.Lock()
+		defer tunnelChanges.Unlock()
 		t := &file.Tunnel{
 			Port:      s.GetIntNoErr("port"),
 			ServerIp:  s.getEscapeString("server_ip"),
@@ -105,12 +122,36 @@ func (s *IndexController) Add() {
 			StripPre:  s.getEscapeString("strip_pre"),
 			Flow:      &file.Flow{},
 		}
+		var err error
+		clientID := s.GetIntNoErr("client_id")
+		if s.GetSession("isAdmin") == false {
+			clientID = s.GetSession("clientId").(int)
+		}
+		if t.Client, err = file.GetDb().GetClient(clientID); err != nil {
+			s.AjaxErr(err.Error())
+		}
+		if t.Mode == "tcp" {
+			port := strings.TrimSpace(s.GetString("port"))
+			tasks := []*file.Tunnel{t}
+			if first, last, ok := common.ParsePortRange(port); ok {
+				tasks, err = server.NewTCPRangeTasks(t, first, last, strings.TrimSpace(t.Target.TargetStr))
+			} else {
+				t.Port, err = strconv.Atoi(port)
+			}
+			if err != nil {
+				s.AjaxErr(err.Error())
+			}
+			if t.Client.MaxTunnelNum != 0 && t.Client.GetTunnelNum()+len(tasks) > t.Client.MaxTunnelNum {
+				s.AjaxErr("The number of tunnels exceeds the limit")
+			}
+			if err := server.AddTCPTunnels(tasks); err != nil {
+				s.AjaxErr(err.Error())
+			}
+			s.AjaxOk("add success")
+			return
+		}
 		if !tool.TestServerPort(t.Port, t.Mode) {
 			s.AjaxErr("The port cannot be opened because it may has been occupied or is no longer allowed.")
-		}
-		var err error
-		if t.Client, err = file.GetDb().GetClient(s.GetIntNoErr("client_id")); err != nil {
-			s.AjaxErr(err.Error())
 		}
 		if t.Client.MaxTunnelNum != 0 && t.Client.GetTunnelNum() >= t.Client.MaxTunnelNum {
 			s.AjaxErr("The number of tunnels exceeds the limit")
@@ -148,15 +189,52 @@ func (s *IndexController) Edit() {
 		s.SetInfo("edit tunnel")
 		s.display()
 	} else {
+		tunnelChanges.Lock()
+		defer tunnelChanges.Unlock()
 		if t, err := file.GetDb().GetTask(id); err != nil {
 			s.error()
 		} else {
-			if client, err := file.GetDb().GetClient(s.GetIntNoErr("client_id")); err != nil {
+			clientID := s.GetIntNoErr("client_id")
+			if s.GetSession("isAdmin") == false {
+				clientID = s.GetSession("clientId").(int)
+			}
+			serverIP := s.getEscapeString("server_ip")
+			client, err := file.GetDb().GetClient(clientID)
+			if err != nil {
 				s.AjaxErr("modified error,the client is not exist")
 				return
-			} else {
-				t.Client = client
 			}
+			mode := s.getEscapeString("type")
+			if t.Mode == "tcp" || mode == "tcp" {
+				if serverIP == "" && s.Data["allow_multi_ip"] == false {
+					serverIP = t.ServerIp
+				}
+				localProxy := s.GetBoolNoErr("local_proxy", t.Target.LocalProxy)
+				port := s.GetIntNoErr("port")
+				if mode == "tcp" {
+					port, err = strconv.Atoi(strings.TrimSpace(s.GetString("port")))
+					if err != nil {
+						s.AjaxErr("Enter one port when editing a TCP tunnel")
+					}
+				}
+				updated := &file.Tunnel{
+					Id: id, Mode: mode, Port: port, ServerIp: serverIP, Client: client, Status: true,
+					Target: &file.Target{TargetStr: s.getEscapeString("target"), LocalProxy: localProxy},
+					Flow:   t.Flow, NoStore: t.NoStore, MultiAccount: t.MultiAccount,
+					Password: s.getEscapeString("password"), Remark: s.getEscapeString("remark"),
+					LocalPath: s.getEscapeString("local_path"), StripPre: s.getEscapeString("strip_pre"),
+				}
+				if mode == "tcp" && t.Port == port && t.Client.Id == clientID && t.ServerIp == serverIP {
+					updated.PortRange, updated.PortRangeName = t.PortRange, t.PortRangeName
+					updated.PortRangeID = t.PortRangeID
+				}
+				if err := server.ReplaceTCPTask(t, updated); err != nil {
+					s.AjaxErr(err.Error())
+				}
+				s.AjaxOk("modified success")
+				return
+			}
+			t.Client = client
 			if s.GetIntNoErr("port") != t.Port {
 				if !tool.TestServerPort(s.GetIntNoErr("port"), t.Mode) {
 					s.AjaxErr("The port cannot be opened because it may has been occupied or is no longer allowed.")
@@ -164,8 +242,8 @@ func (s *IndexController) Edit() {
 				}
 				t.Port = s.GetIntNoErr("port")
 			}
-			t.ServerIp = s.getEscapeString("server_ip")
-			t.Mode = s.getEscapeString("type")
+			t.ServerIp = serverIP
+			t.Mode = mode
 			t.Target = &file.Target{TargetStr: s.getEscapeString("target")}
 			t.Password = s.getEscapeString("password")
 			t.Id = id
@@ -182,6 +260,8 @@ func (s *IndexController) Edit() {
 }
 
 func (s *IndexController) Stop() {
+	tunnelChanges.Lock()
+	defer tunnelChanges.Unlock()
 	id := s.GetIntNoErr("id")
 	if err := server.StopServer(id); err != nil {
 		s.AjaxErr("stop error")
@@ -190,6 +270,8 @@ func (s *IndexController) Stop() {
 }
 
 func (s *IndexController) Del() {
+	tunnelChanges.Lock()
+	defer tunnelChanges.Unlock()
 	id := s.GetIntNoErr("id")
 	if err := server.DelTask(id); err != nil {
 		s.AjaxErr("delete error")
@@ -198,6 +280,8 @@ func (s *IndexController) Del() {
 }
 
 func (s *IndexController) Start() {
+	tunnelChanges.Lock()
+	defer tunnelChanges.Unlock()
 	id := s.GetIntNoErr("id")
 	if err := server.StartTask(id); err != nil {
 		s.AjaxErr("start error")

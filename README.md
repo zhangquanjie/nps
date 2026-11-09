@@ -1,5 +1,12 @@
 
 # NPS
+
+This fork is based on [ehang-io/nps](https://github.com/ehang-io/nps)
+at commit `ab648d6`. The changes dated 2026-11-09 add expandable TCP port
+ranges, per-port traffic and the latest visitor IP, and selectable admin
+themes. The original copyright notices and [GNU GPL v3 license](LICENSE)
+apply. See the [Chinese guide](README_zh.md#二次开发版) for usage.
+
 ![](https://img.shields.io/github/stars/ehang-io/nps.svg)   ![](https://img.shields.io/github/forks/ehang-io/nps.svg)
 [![Gitter](https://badges.gitter.im/cnlh-nps/community.svg)](https://gitter.im/cnlh-nps/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 ![Release](https://github.com/ehang-io/nps/workflows/Release/badge.svg)

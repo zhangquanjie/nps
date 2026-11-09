@@ -117,7 +117,9 @@ func (s *ClientController) Edit() {
 					return
 				}
 				c.VerifyKey = s.getEscapeString("vkey")
+				c.Flow.Lock()
 				c.Flow.FlowLimit = int64(s.GetIntNoErr("flow_limit"))
+				c.Flow.Unlock()
 				c.RateLimit = s.GetIntNoErr("rate_limit")
 				c.MaxConn = s.GetIntNoErr("max_conn")
 				c.MaxTunnelNum = s.GetIntNoErr("max_tunnel")

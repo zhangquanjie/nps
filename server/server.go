@@ -24,8 +24,9 @@ import (
 )
 
 var (
-	Bridge  *bridge.Bridge
-	RunList sync.Map //map[int]interface{}
+	Bridge        *bridge.Bridge
+	RunList       sync.Map //map[int]interface{}
+	flowStoreOnce sync.Once
 )
 
 func init() {
@@ -87,6 +88,7 @@ func DealBridgeTask() {
 //start a new server
 func StartNewServer(bridgePort int, cnf *file.Tunnel, bridgeType string, bridgeDisconnect int) {
 	Bridge = bridge.NewTunnel(bridgePort, bridgeType, common.GetBoolByStr(beego.AppConfig.String("ip_limit")), RunList, bridgeDisconnect)
+	Bridge.OpenTCPRange = AddTCPTunnels
 	go func() {
 		if err := Bridge.StartTunnel(); err != nil {
 			logs.Error("start server bridge error", err)
@@ -171,7 +173,9 @@ func StopServer(id int) error {
 		if t, err := file.GetDb().GetTask(id); err != nil {
 			return err
 		} else {
+			t.Lock()
 			t.Status = false
+			t.Unlock()
 			file.GetDb().UpdateTask(t)
 		}
 		//delete(RunList, id)
@@ -189,13 +193,19 @@ func AddTask(t *file.Tunnel) error {
 		RunList.Store(t.Id, nil)
 		return nil
 	}
+	if t.Mode == "tcp" {
+		service, err := listenTCP(t)
+		if err != nil {
+			return err
+		}
+		runTCP(t, service)
+		return nil
+	}
 	if b := tool.TestServerPort(t.Port, t.Mode); !b && t.Mode != "httpHostServer" {
 		logs.Error("taskId %d start error port %d open failed", t.Id, t.Port)
 		return errors.New("the port open error")
 	}
-	if minute, err := beego.AppConfig.Int("flow_store_interval"); err == nil && minute > 0 {
-		go flowSession(time.Minute * time.Duration(minute))
-	}
+	startFlowStore()
 	if svr := NewMode(Bridge, t); svr != nil {
 		logs.Info("tunnel task %s start mode：%s port %d", t.Remark, t.Mode, t.Port)
 		//RunList[t.Id] = svr
@@ -219,8 +229,15 @@ func StartTask(id int) error {
 	if t, err := file.GetDb().GetTask(id); err != nil {
 		return err
 	} else {
-		AddTask(t)
+		if _, running := RunList.Load(id); running {
+			return nil
+		}
+		if err := AddTask(t); err != nil {
+			return err
+		}
+		t.Lock()
 		t.Status = true
+		t.Unlock()
 		file.GetDb().UpdateTask(t)
 	}
 	return nil
@@ -289,24 +306,28 @@ func dealClientData() {
 		} else {
 			v.IsConnect = false
 		}
-		v.Flow.InletFlow = 0
-		v.Flow.ExportFlow = 0
+		var inlet, export int64
 		file.GetDb().JsonDb.Hosts.Range(func(key, value interface{}) bool {
 			h := value.(*file.Host)
 			if h.Client.Id == v.Id {
-				v.Flow.InletFlow += h.Flow.InletFlow
-				v.Flow.ExportFlow += h.Flow.ExportFlow
+				in, out := h.Flow.Totals()
+				inlet += in
+				export += out
 			}
 			return true
 		})
 		file.GetDb().JsonDb.Tasks.Range(func(key, value interface{}) bool {
 			t := value.(*file.Tunnel)
 			if t.Client.Id == v.Id {
-				v.Flow.InletFlow += t.Flow.InletFlow
-				v.Flow.ExportFlow += t.Flow.ExportFlow
+				in, out := t.Flow.Totals()
+				inlet += in
+				export += out
 			}
 			return true
 		})
+		v.Flow.Lock()
+		v.Flow.InletFlow, v.Flow.ExportFlow = inlet, export
+		v.Flow.Unlock()
 		return true
 	})
 	return
@@ -365,8 +386,9 @@ func GetDashboardData() map[string]interface{} {
 		if v.IsConnect {
 			c += 1
 		}
-		in += v.Flow.InletFlow
-		out += v.Flow.ExportFlow
+		inlet, export := v.Flow.Totals()
+		in += inlet
+		out += export
 		return true
 	})
 	data["clientOnlineCount"] = c
@@ -444,6 +466,14 @@ func GetDashboardData() map[string]interface{} {
 		}
 	}
 	return data
+}
+
+func startFlowStore() {
+	flowStoreOnce.Do(func() {
+		if minute, err := beego.AppConfig.Int("flow_store_interval"); err == nil && minute > 0 {
+			go flowSession(time.Minute * time.Duration(minute))
+		}
+	})
 }
 
 func flowSession(m time.Duration) {

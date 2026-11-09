@@ -42,18 +42,12 @@ func NewBaseServer(bridge *bridge.Bridge, task *file.Tunnel) *BaseServer {
 
 //add the flow
 func (s *BaseServer) FlowAdd(in, out int64) {
-	s.Lock()
-	defer s.Unlock()
-	s.task.Flow.ExportFlow += out
-	s.task.Flow.InletFlow += in
+	s.task.Flow.Add(in, out)
 }
 
 //change the flow
 func (s *BaseServer) FlowAddHost(host *file.Host, in, out int64) {
-	s.Lock()
-	defer s.Unlock()
-	host.Flow.ExportFlow += out
-	host.Flow.InletFlow += in
+	host.Flow.Add(in, out)
 }
 
 //write fail bytes to the connection
@@ -74,7 +68,10 @@ func (s *BaseServer) auth(r *http.Request, c *conn.Conn, u, p string) error {
 
 //check flow limit of the client ,and decrease the allow num of client
 func (s *BaseServer) CheckFlowAndConnNum(client *file.Client) error {
-	if client.Flow.FlowLimit > 0 && (client.Flow.FlowLimit<<20) < (client.Flow.ExportFlow+client.Flow.InletFlow) {
+	client.Flow.RLock()
+	exceeded := client.Flow.FlowLimit > 0 && (client.Flow.FlowLimit<<20) < (client.Flow.ExportFlow+client.Flow.InletFlow)
+	client.Flow.RUnlock()
+	if exceeded {
 		return errors.New("Traffic exceeded")
 	}
 	if !client.GetConn() {

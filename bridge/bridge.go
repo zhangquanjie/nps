@@ -46,6 +46,7 @@ type Bridge struct {
 	Register       sync.Map
 	tunnelType     string //bridge type kcp or tcp
 	OpenTask       chan *file.Tunnel
+	OpenTCPRange   func([]*file.Tunnel) error
 	CloseTask      chan *file.Tunnel
 	CloseClient    chan int
 	SecretChan     chan *conn.Secret
@@ -130,10 +131,12 @@ func (s *Bridge) GetHealthFromClient(id int, c *conn.Conn) {
 		} else { //the status is false,remove target from the targetArr
 			file.GetDb().JsonDb.Tasks.Range(func(key, value interface{}) bool {
 				v := value.(*file.Tunnel)
-				if v.Client.Id == id && v.Mode == "tcp" && common.IsArrContains(v.HealthRemoveArr, info) && !common.IsArrContains(v.Target.TargetArr, info) {
+				if v.Client.Id == id && v.Mode == "tcp" {
 					v.Lock()
-					v.Target.TargetArr = append(v.Target.TargetArr, info)
-					v.HealthRemoveArr = common.RemoveArrVal(v.HealthRemoveArr, info)
+					if common.IsArrContains(v.HealthRemoveArr, info) && !common.IsArrContains(v.Target.TargetArr, info) {
+						v.Target.TargetArr = append(v.Target.TargetArr, info)
+						v.HealthRemoveArr = common.RemoveArrVal(v.HealthRemoveArr, info)
+					}
 					v.Unlock()
 				}
 				return true
@@ -483,10 +486,19 @@ loop:
 					c.WriteAddFail()
 					break loop
 				}
+				portRange := ""
+				if first, last, ok := common.ParsePortRange(t.Ports); t.Mode == "tcp" && ok && last > first {
+					portRange = fmt.Sprintf("%d-%d", first, last)
+				}
+				var rangeTasks []*file.Tunnel
 				for i := 0; i < len(ports); i++ {
 					tl := new(file.Tunnel)
 					tl.Mode = t.Mode
 					tl.Port = ports[i]
+					tl.PortRange = portRange
+					if portRange != "" {
+						tl.PortRangeName = t.Remark
+					}
 					tl.ServerIp = t.ServerIp
 					if len(ports) == 1 {
 						tl.Target = t.Target
@@ -494,6 +506,7 @@ loop:
 					} else {
 						tl.Remark = t.Remark + "_" + strconv.Itoa(tl.Port)
 						tl.Target = new(file.Target)
+						tl.Target.LocalProxy = t.Target.LocalProxy
 						if t.TargetAddr != "" {
 							tl.Target.TargetStr = t.TargetAddr + ":" + strconv.Itoa(targets[i])
 						} else {
@@ -510,6 +523,10 @@ loop:
 					tl.StripPre = t.StripPre
 					tl.MultiAccount = t.MultiAccount
 					if !client.HasTunnel(tl) {
+						if portRange != "" {
+							rangeTasks = append(rangeTasks, tl)
+							continue
+						}
 						if err := file.GetDb().NewTask(tl); err != nil {
 							logs.Notice("Add task error ", err.Error())
 							fail = true
@@ -524,8 +541,16 @@ loop:
 							s.OpenTask <- tl
 						}
 					}
-					c.WriteAddOk()
 				}
+				if len(rangeTasks) > 0 {
+					if err := s.OpenTCPRange(rangeTasks); err != nil {
+						logs.Warn("Cannot open TCP range %s for client %d: %v", portRange, client.Id, err)
+						fail = true
+						c.WriteAddFail()
+						break loop
+					}
+				}
+				c.WriteAddOk()
 			}
 		}
 	}

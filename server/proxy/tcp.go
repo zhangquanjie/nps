@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"ehang.io/nps/bridge"
 	"ehang.io/nps/lib/common"
@@ -33,20 +34,46 @@ func NewTunnelModeServer(process process, bridge NetBridge, task *file.Tunnel) *
 
 //开始
 func (s *TunnelModeServer) Start() error {
-	return conn.NewTcpListenerAndProcess(s.task.ServerIp+":"+strconv.Itoa(s.task.Port), func(c net.Conn) {
+	if err := s.Listen(); err != nil {
+		return err
+	}
+	s.Serve()
+	return nil
+}
+
+func (s *TunnelModeServer) Listen() error {
+	host := s.task.ServerIp
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	var err error
+	s.listener, err = net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(s.task.Port)))
+	return err
+}
+
+func (s *TunnelModeServer) Serve() {
+	conn.Accept(s.listener, func(c net.Conn) {
 		if err := s.CheckFlowAndConnNum(s.task.Client); err != nil {
 			logs.Warn("client id %d, task id %d,error %s, when tcp connection", s.task.Client.Id, s.task.Id, err.Error())
 			c.Close()
 			return
 		}
+		defer s.task.Client.AddConn()
+		if s.task.Mode == "tcp" {
+			if ip, _, err := net.SplitHostPort(c.RemoteAddr().String()); err == nil {
+				s.task.RecordSourceIP(ip)
+			}
+		}
 		logs.Trace("new tcp connection,local port %d,client %d,remote address %s", s.task.Port, s.task.Client.Id, c.RemoteAddr())
 		s.process(conn.NewConn(c), s)
-		s.task.Client.AddConn()
-	}, &s.listener)
+	})
 }
 
 //close
 func (s *TunnelModeServer) Close() error {
+	if s.listener == nil {
+		return nil
+	}
 	return s.listener.Close()
 }
 
@@ -97,7 +124,9 @@ type process func(c *conn.Conn, s *TunnelModeServer) error
 
 //tcp proxy
 func ProcessTunnel(c *conn.Conn, s *TunnelModeServer) error {
+	s.task.Lock()
 	targetAddr, err := s.task.Target.GetRandomTarget()
+	s.task.Unlock()
 	if err != nil {
 		c.Close()
 		logs.Warn("tcp port %d ,client id %d,task id %d connect error %s", s.task.Port, s.task.Client.Id, s.task.Id, err.Error())

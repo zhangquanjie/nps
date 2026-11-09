@@ -1,6 +1,7 @@
 package file
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,22 @@ func (s *Flow) Add(in, out int64) {
 	defer s.Unlock()
 	s.InletFlow += int64(in)
 	s.ExportFlow += int64(out)
+}
+
+func (s *Flow) Totals() (in, out int64) {
+	s.RLock()
+	defer s.RUnlock()
+	return s.InletFlow, s.ExportFlow
+}
+
+func (s *Flow) MarshalJSON() ([]byte, error) {
+	s.RLock()
+	defer s.RUnlock()
+	return json.Marshal(struct {
+		ExportFlow int64
+		InletFlow  int64
+		FlowLimit  int64
+	}{s.ExportFlow, s.InletFlow, s.FlowLimit})
 }
 
 type Config struct {
@@ -125,25 +142,43 @@ func (s *Client) HasHost(h *Host) bool {
 }
 
 type Tunnel struct {
-	Id           int
-	Port         int
-	ServerIp     string
-	Mode         string
-	Status       bool
-	RunStatus    bool
-	Client       *Client
-	Ports        string
-	Flow         *Flow
-	Password     string
-	Remark       string
-	TargetAddr   string
-	NoStore      bool
-	LocalPath    string
-	StripPre     string
-	Target       *Target
-	MultiAccount *MultiAccount
+	Id            int
+	Port          int
+	ServerIp      string
+	Mode          string
+	Status        bool
+	RunStatus     bool
+	Client        *Client
+	Ports         string
+	PortRange     string `json:",omitempty"`
+	PortRangeName string `json:",omitempty"`
+	PortRangeID   int    `json:",omitempty"`
+	Flow          *Flow
+	Password      string
+	Remark        string
+	TargetAddr    string
+	NoStore       bool
+	LocalPath     string
+	StripPre      string
+	Target        *Target
+	MultiAccount  *MultiAccount
+	lastSourceIP  string
+	lastSourceAt  time.Time
 	Health
 	sync.RWMutex
+}
+
+func (t *Tunnel) RecordSourceIP(ip string) {
+	t.Lock()
+	defer t.Unlock()
+	t.lastSourceIP = ip
+	t.lastSourceAt = time.Now()
+}
+
+func (t *Tunnel) LastSource() (string, time.Time) {
+	t.RLock()
+	defer t.RUnlock()
+	return t.lastSourceIP, t.lastSourceAt
 }
 
 type Health struct {
@@ -191,6 +226,8 @@ type MultiAccount struct {
 }
 
 func (s *Target) GetRandomTarget() (string, error) {
+	s.Lock()
+	defer s.Unlock()
 	if s.TargetArr == nil {
 		s.TargetArr = strings.Split(s.TargetStr, "\n")
 	}
@@ -200,8 +237,6 @@ func (s *Target) GetRandomTarget() (string, error) {
 	if len(s.TargetArr) == 0 {
 		return "", errors.New("all inward-bending targets are offline")
 	}
-	s.Lock()
-	defer s.Unlock()
 	if s.nowIndex >= len(s.TargetArr)-1 {
 		s.nowIndex = -1
 	}

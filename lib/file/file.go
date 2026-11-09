@@ -161,7 +161,9 @@ func storeSyncMapToFile(m sync.Map, filePath string) {
 			if obj.NoStore {
 				return true
 			}
+			obj.RLock()
 			b, err = json.Marshal(obj)
+			obj.RUnlock()
 		case *Host:
 			obj := value.(*Host)
 			if obj.NoStore {

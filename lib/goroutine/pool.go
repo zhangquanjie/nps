@@ -10,19 +10,29 @@ import (
 )
 
 type connGroup struct {
-	src io.ReadWriteCloser
-	dst io.ReadWriteCloser
-	wg  *sync.WaitGroup
-	n   *int64
+	src      io.ReadWriteCloser
+	dst      io.ReadWriteCloser
+	wg       *sync.WaitGroup
+	flow     *file.Flow
+	incoming bool
 }
 
-func newConnGroup(dst, src io.ReadWriteCloser, wg *sync.WaitGroup, n *int64) connGroup {
-	return connGroup{
-		src: src,
-		dst: dst,
-		wg:  wg,
-		n:   n,
+type flowWriter struct {
+	io.Writer
+	flow     *file.Flow
+	incoming bool
+}
+
+func (w flowWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if n > 0 {
+		if w.incoming {
+			w.flow.Add(int64(n), 0)
+		} else {
+			w.flow.Add(0, int64(n))
+		}
 	}
+	return n, err
 }
 
 func copyConnGroup(group interface{}) {
@@ -30,8 +40,11 @@ func copyConnGroup(group interface{}) {
 	if !ok {
 		return
 	}
-	var err error
-	*cg.n, err = common.CopyBuffer(cg.dst, cg.src)
+	var dst io.Writer = cg.dst
+	if cg.flow != nil {
+		dst = flowWriter{cg.dst, cg.flow, cg.incoming}
+	}
+	_, err := common.CopyBuffer(dst, cg.src)
 	if err != nil {
 		cg.src.Close()
 		cg.dst.Close()
@@ -60,15 +73,9 @@ func copyConns(group interface{}) {
 	conns := group.(Conns)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	var in, out int64
-	_ = connCopyPool.Invoke(newConnGroup(conns.conn1, conns.conn2, wg, &in))
-	// outside to mux : incoming
-	_ = connCopyPool.Invoke(newConnGroup(conns.conn2, conns.conn1, wg, &out))
-	// mux to outside : outgoing
+	_ = connCopyPool.Invoke(connGroup{src: conns.conn2, dst: conns.conn1, wg: wg, flow: conns.flow, incoming: true})
+	_ = connCopyPool.Invoke(connGroup{src: conns.conn1, dst: conns.conn2, wg: wg, flow: conns.flow})
 	wg.Wait()
-	if conns.flow != nil {
-		conns.flow.Add(in, out)
-	}
 	conns.wg.Done()
 }
 
