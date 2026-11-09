@@ -20,6 +20,10 @@
 在仓库根目录运行 `go build -o nps.exe ./cmd/nps` 可构建 Windows 服务端。
 升级时，将新版服务端和本仓库的 `web` 目录一起部署，并沿用原来的 `conf` 数据。
 
+[下载二次开发版](https://github.com/zhangquanjie/nps/releases/latest)。按操作系统和 CPU 架构选择
+`_server.tar.gz`（服务端 NPS）或 `_client.tar.gz`（客户端 NPC），并可用
+`SHA256SUMS.txt` 校验文件。推送 `v*-fork.*` 格式的标签会构建并发布对应版本。
+
 ![](https://img.shields.io/github/stars/ehang-io/nps.svg)   ![](https://img.shields.io/github/forks/ehang-io/nps.svg)
 [![Gitter](https://badges.gitter.im/cnlh-nps/community.svg)](https://gitter.im/cnlh-nps/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 ![Release](https://github.com/ehang-io/nps/workflows/Release/badge.svg)
