@@ -46,7 +46,7 @@ type Bridge struct {
 	Register       sync.Map
 	tunnelType     string //bridge type kcp or tcp
 	OpenTask       chan *file.Tunnel
-	OpenTCPRange   func([]*file.Tunnel) error
+	OpenTCPTasks   func([]*file.Tunnel) error
 	CloseTask      chan *file.Tunnel
 	CloseClient    chan int
 	SecretChan     chan *conn.Secret
@@ -472,7 +472,13 @@ loop:
 				c.WriteAddFail()
 				break loop
 			} else {
-				ports := common.GetPorts(t.Ports)
+				var ports []int
+				var portRanges []string
+				if t.Mode == "tcp" {
+					ports, portRanges = expandTCPPorts(t.Ports)
+				} else {
+					ports = common.GetPorts(t.Ports)
+				}
 				targets := common.GetPorts(t.Target.TargetStr)
 				if len(ports) > 1 && (t.Mode == "tcp" || t.Mode == "udp") && (len(ports) != len(targets)) {
 					fail = true
@@ -486,17 +492,14 @@ loop:
 					c.WriteAddFail()
 					break loop
 				}
-				portRange := ""
-				if first, last, ok := common.ParsePortRange(t.Ports); t.Mode == "tcp" && ok && last > first {
-					portRange = fmt.Sprintf("%d-%d", first, last)
-				}
-				var rangeTasks []*file.Tunnel
+				var tcpTasks []*file.Tunnel
+				queuedTCPPorts := make(map[int]bool)
 				for i := 0; i < len(ports); i++ {
 					tl := new(file.Tunnel)
 					tl.Mode = t.Mode
 					tl.Port = ports[i]
-					tl.PortRange = portRange
-					if portRange != "" {
+					if t.Mode == "tcp" && portRanges[i] != "" {
+						tl.PortRange = portRanges[i]
 						tl.PortRangeName = t.Remark
 					}
 					tl.ServerIp = t.ServerIp
@@ -523,8 +526,11 @@ loop:
 					tl.StripPre = t.StripPre
 					tl.MultiAccount = t.MultiAccount
 					if !client.HasTunnel(tl) {
-						if portRange != "" {
-							rangeTasks = append(rangeTasks, tl)
+						if t.Mode == "tcp" {
+							if !queuedTCPPorts[tl.Port] {
+								tcpTasks = append(tcpTasks, tl)
+								queuedTCPPorts[tl.Port] = true
+							}
 							continue
 						}
 						if err := file.GetDb().NewTask(tl); err != nil {
@@ -542,9 +548,9 @@ loop:
 						}
 					}
 				}
-				if len(rangeTasks) > 0 {
-					if err := s.OpenTCPRange(rangeTasks); err != nil {
-						logs.Warn("Cannot open TCP range %s for client %d: %v", portRange, client.Id, err)
+				if len(tcpTasks) > 0 {
+					if err := s.OpenTCPTasks(tcpTasks); err != nil {
+						logs.Warn("Cannot open TCP ports %s for client %d: %v", t.Ports, client.Id, err)
 						fail = true
 						c.WriteAddFail()
 						break loop
@@ -558,4 +564,20 @@ loop:
 		s.DelClient(client.Id)
 	}
 	c.Close()
+}
+
+// expandTCPPorts keeps the range label for each port in the original mapping order.
+func expandTCPPorts(spec string) (ports []int, ranges []string) {
+	for _, segment := range strings.Split(spec, ",") {
+		members := common.GetPorts(segment)
+		label := ""
+		if len(members) > 1 {
+			label = fmt.Sprintf("%d-%d", members[0], members[len(members)-1])
+		}
+		ports = append(ports, members...)
+		for range members {
+			ranges = append(ranges, label)
+		}
+	}
+	return ports, ranges
 }
